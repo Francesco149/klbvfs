@@ -34,6 +34,29 @@ def hmac_sha1(key, s):
   return hmacsha1.digest()
 
 
+def klbvfs_transform_byte(byte, key):
+  byte ^= i8(key[0] >> 24) ^ i8(key[1] >> 24) ^ i8(key[2] >> 24)
+  key[0] = i32(i32(key[0] * 0x343fd) + 0x269ec3)
+  key[1] = i32(i32(key[1] * 0x343fd) + 0x269ec3)
+  key[2] = i32(i32(key[2] * 0x343fd) + 0x269ec3)
+  return byte
+
+
+# this is used for random seeks through encrypted files
+# it computes the prng state in log(offset) instead of offset cycles
+# https://www.nayuki.io/page/fast-skipping-in-a-linear-congruential-generator
+def prng_seek(k, offset, mul, add, mod):
+  mul1 = mul - 1
+  modmul = mul1 * mod
+  y = (pow(mul, offset, modmul) - 1) // mul1 * add
+  z = pow(mul, offset, mod) * k
+  return (y + z) % mod
+
+
+def klbvfs_transform(data, key):
+  return bytes([klbvfs_transform_byte(x, key) for x in data]), len(data)
+
+
 class KLBVFS(apsw.VFS):
   def __init__(self, vfsname='klb_vfs', basevfs=''):
     self.vfsname = vfsname
@@ -61,61 +84,10 @@ class KLBVFSFile(apsw.VFSFile):
     apsw.VFSFile.__init__(self, inheritfromvfsname, split[1], flags)
 
   def xRead(self, amount, offset):
-    result = super(KLBVFSFile, self).xRead(amount, offset)
-    random2 = 0x000343fd
-    random1 = 0x00269ec3
-    key1 = self.key[0]
-    if offset == 0:
-      random1 = 0
-      random2 = self.key[1]
-      random_multiplier = self.key[2]
-      rand_seed = 1
-    else:
-      random_multiplier = 1
-      rand_seed = 0
-      tmpoff = offset
-      while tmpoff != 0:
-        if (tmpoff & 1) != 0:
-          rand_seed = i32(i32(random_multiplier * random1) + rand_seed)
-          random_multiplier = i32(random_multiplier * random2)
-        tmpoff >>= 1
-        random1 = i32(i32(random2 * random1) + random1)
-        random2 = i32(random2 * random2)
-      random1 = 1
-      random3 = 0x00269ec3
-      key1 = i32(i32(random_multiplier * key1) + rand_seed)
-      random2 = 0
-      rand_seed = 0x000343fd
-      tmpoff = offset
-      while tmpoff != 0:
-        if (tmpoff & 1) != 0:
-          random2 = i32(i32(random1 * random3) + random2)
-          random1 = i32(random1 * rand_seed)
-        tmpoff >>= 1
-        random3 = i32(i32(rand_seed * random3) + random3)
-        rand_seed = i32(rand_seed * rand_seed)
-      random2 = i32(i32(random1 * self.key[1]) + random2)
-      random_multiplier = self.key[2]
-      rand_seed = 1
-      random1 = 0
-      random3 = 0x00269ec3
-      random4 = 0x000343fd
-      tmpoff = offset
-      while tmpoff != 0:
-        if (tmpoff & 1) != 0:
-          random1 = i32(i32(rand_seed * random3) + random1)
-          rand_seed = i32(rand_seed * random4)
-        tmpoff >>= 1
-        random3 = i32(i32(random4 * random3) + random3)
-        random4 = i32(random4 * random4)
-    random1 = i32(i32(rand_seed * random_multiplier) + random1)
-    b = bytearray(result)
-    for i in range(amount):
-      b[i] ^= i8(random2 >> 24) ^ i8(key1 >> 24) ^ i8(random1 >> 24)
-      key1 = i32(i32(key1 * 0x000343fd) + 0x00269ec3)
-      random1 = i32(i32(random1 * 0x000343fd) + 0x00269ec3)
-      random2 = i32(i32(random2 * 0x000343fd) + 0x00269ec3)
-    return bytes(b)
+    encrypted = super(KLBVFSFile, self).xRead(amount, offset)
+    k = [prng_seek(k, offset, 0x343fd, 0x269ec3, 2**32) for k in self.key]
+    res, _ = klbvfs_transform(bytearray(encrypted), k)
+    return res
 
 
 def sqlite_key(dbfile):
@@ -152,18 +124,6 @@ def do_query(args):
       print(row[0])
     else:
       print(row)
-
-
-def klbvfs_transform_byte(byte, key):
-  byte ^= i8(key[1] >> 24) ^ i8(key[0] >> 24) ^ i8(key[2] >> 24)
-  key[0] = i32(i32(key[0] * 0x000343fd) + 0x00269ec3)
-  key[2] = i32(i32(key[2] * 0x000343fd) + 0x00269ec3)
-  key[1] = i32(i32(key[1] * 0x000343fd) + 0x00269ec3)
-  return byte
-
-
-def klbvfs_transform(data, key):
-  return bytes([klbvfs_transform_byte(x, key) for x in data]), len(data)
 
 
 class KLBVFSCodec(codecs.Codec):
