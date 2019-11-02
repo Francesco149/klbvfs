@@ -121,7 +121,8 @@ def sqlite_key(dbfile):
   base = os.path.dirname(abspath)
   base = os.path.dirname(base)
   base = os.path.dirname(base)
-  prefs_path = 'shared_prefs/com.klab.lovelive.allstars.v2.playerprefs.xml'
+  pkgname = os.path.basename(base)
+  prefs_path = 'shared_prefs/' + pkgname + '.v2.playerprefs.xml'
   prefs = os.path.join(base, prefs_path)
   xml = open(prefs, 'r').read()
   soup = BeautifulSoup(xml, 'lxml-xml')
