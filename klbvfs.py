@@ -154,10 +154,13 @@ codecs.register(klbvfs_decoder)
 
 
 def do_decrypt(args):
-  key = sqlite_key(args.source)
-  src = codecs.open(args.source, mode='rb', encoding='klbvfs', errors=key)
-  dst = open(args.destination, 'wb+')
-  shutil.copyfileobj(src, dst)
+  for source in args.files:
+    key = sqlite_key(source)
+    src = codecs.open(source, mode='rb', encoding='klbvfs', errors=key)
+    dstpath = '_'.join(source.split('_')[:-1])
+    dst = open(dstpath, 'wb+')
+    print('%s -> %s' % (source, dstpath))
+    shutil.copyfileobj(src, dst)
 
 
 if __name__ == "__main__":
@@ -172,8 +175,7 @@ if __name__ == "__main__":
   query.set_defaults(func=do_query)
   desc = 'clone encrypted database to a regular unencrypted sqlite db'
   decrypt = sub.add_parser('decrypt', aliases=['de'], help=desc)
-  decrypt.add_argument('source')
-  decrypt.add_argument('destination')
+  decrypt.add_argument('files', nargs='+')
   decrypt.set_defaults(func=do_decrypt)
   args = parser.parse_args(sys.argv[1:])
   if 'func' not in args:

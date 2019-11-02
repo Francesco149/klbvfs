@@ -27,6 +27,7 @@ now you can use it
 
 ```
 ./klbvfs.py query masterdata.db_* "select sql from sqlite_master;"
+./klbvfs decrypt *.db_*.db
 ./klbvfs.py --help
 ```
 
