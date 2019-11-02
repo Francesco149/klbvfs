@@ -26,7 +26,18 @@ python3 -m pip install -r requirements.txt
 now you can use it
 
 ```
-./klbvfs.py masterdata.db_* "select * from sqlite_master where type = 'table'"
+./klbvfs.py query masterdata.db_* "select sql from sqlite_master;"
+./klbvfs.py --help
+```
+
+this also registers a python codec for klbvfs which can be used to decrypt
+like so
+
+```python
+key = sqlite_key('encrypted.db')
+src = codecs.open('encrypted.db', mode='rb', encoding='klbvfs', errors=key)
+dst = open('decrypted.db', 'wb+')
+shutil.copyfileobj(src, dst)
 ```
 
 # future development

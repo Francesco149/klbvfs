@@ -16,6 +16,8 @@ import base64
 import hmac
 import hashlib
 import struct
+import codecs
+import shutil
 
 
 def i8(x):
@@ -137,15 +139,83 @@ def vpath(path, key):
   return '.'.join([str(i32(x)) for x in key]) + ' ' + path
 
 
-if __name__ == "__main__":
+def klb_sqlite(dbfile):
   vfs = KLBVFS()
-  if len(sys.argv) != 3:
-    print('usage: ' + sys.argv[0] + ' file.db "sql query"')
-    sys.exit(1)
-  f = sys.argv[1]
-  cmd = sys.argv[2]
-  key = sqlite_key(f)
-  vp = vpath(path=f, key=key)
-  db = apsw.Connection(vp, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
-  for row in db.cursor().execute(cmd):
-    print(row)
+  key = sqlite_key(dbfile)
+  v = vpath(path=dbfile, key=key)
+  return apsw.Connection(v, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
+
+
+def do_query(args):
+  for row in klb_sqlite(args.dbfile).cursor().execute(args.sql):
+    if len(row) == 1:
+      print(row[0])
+    else:
+      print(row)
+
+
+def klbvfs_transform_byte(byte, key):
+  byte ^= i8(key[1] >> 24) ^ i8(key[0] >> 24) ^ i8(key[2] >> 24)
+  key[0] = i32(i32(key[0] * 0x000343fd) + 0x00269ec3)
+  key[2] = i32(i32(key[2] * 0x000343fd) + 0x00269ec3)
+  key[1] = i32(i32(key[1] * 0x000343fd) + 0x00269ec3)
+  return byte
+
+
+def klbvfs_transform(data, key):
+  return bytes([klbvfs_transform_byte(x, key) for x in data]), len(data)
+
+
+class KLBVFSCodec(codecs.Codec):
+  def encode(self, data, key):
+    return klbvfs_transform(data, key)
+
+  def decode(self, data, key):
+    return klbvfs_transform(data, key)
+
+
+class KLBVFSStreamReader(KLBVFSCodec, codecs.StreamReader):
+  charbuffertype = bytes
+
+
+class KLBVFSStreamWriter(KLBVFSCodec, codecs.StreamWriter):
+  charbuffertype = bytes
+
+
+def klbvfs_decoder(encoding_name):
+  t = klbvfs_transform
+  return codecs.CodecInfo(name='klbvfs', encode=t, decode=t,
+                          streamreader=KLBVFSStreamReader,
+                          streamwriter=KLBVFSStreamWriter,
+                          _is_text_encoding=False)
+
+
+codecs.register(klbvfs_decoder)
+
+
+def do_decrypt(args):
+  key = sqlite_key(args.source)
+  src = codecs.open(args.source, mode='rb', encoding='klbvfs', errors=key)
+  dst = open(args.destination, 'wb+')
+  shutil.copyfileobj(src, dst)
+
+
+if __name__ == "__main__":
+  import argparse
+  parser = argparse.ArgumentParser(description='klab sqlite vfs utils')
+  sub = parser.add_subparsers()
+  desc = 'run a sql query on the encrypted database'
+  query = sub.add_parser('query', aliases=['q'], help=desc)
+  query.add_argument('dbfile')
+  defsql = "select sql from sqlite_master where type='table'"
+  query.add_argument('sql', nargs='?', default=defsql)
+  query.set_defaults(func=do_query)
+  desc = 'clone encrypted database to a regular unencrypted sqlite db'
+  decrypt = sub.add_parser('decrypt', aliases=['de'], help=desc)
+  decrypt.add_argument('source')
+  decrypt.add_argument('destination')
+  decrypt.set_defaults(func=do_decrypt)
+  args = parser.parse_args(sys.argv[1:])
+  if 'func' not in args:
+    parser.parse_args(['-h'])
+  args.func(args)
