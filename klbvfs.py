@@ -65,8 +65,8 @@ class KLBVFSFile(apsw.VFSFile):
     key1 = self.key[0]
     if offset == 0:
       random1 = 0
-      random2 = key[1]
-      random_multiplier = key[2]
+      random2 = self.key[1]
+      random_multiplier = self.key[2]
       rand_seed = 1
     else:
       random_multiplier = 1
