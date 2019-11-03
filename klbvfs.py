@@ -182,8 +182,6 @@ def do_dump(args):
       key = [key1, key2, 0x3039]
       pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
       pkg.seek(head)
-      print(key)
-      print(pkg.errors)
       fpath = os.path.join(dstdir, "%s_%d_.png" % (pack_name, head))
       dst = open(fpath, 'wb+')
       shutil.copyfileobj(pkg, dst, size)
