@@ -154,35 +154,41 @@ def do_query(args):
       print(row)
 
 
+def decrypt_db(source):
+  key = sqlite_key(source)
+  src = codecs.open(source, mode='rb', encoding='klbvfs', errors=key)
+  dstpath = '_'.join(source.split('_')[:-1])
+  dst = open(dstpath, 'wb+')
+  print('%s -> %s' % (source, dstpath))
+  shutil.copyfileobj(src, dst)
+  src.close()
+  dst.close()
+  return dstpath
+
+
 def do_decrypt(args):
   for source in args.files:
-    key = sqlite_key(source)
-    src = codecs.open(source, mode='rb', encoding='klbvfs', errors=key)
-    dstpath = '_'.join(source.split('_')[:-1])
-    dst = open(dstpath, 'wb+')
-    print('%s -> %s' % (source, dstpath))
-    shutil.copyfileobj(src, dst)
+    decrypt_db(source)
 
 
 def do_dump(args):
   for source in args.directories:
     pattern = re.compile("asset_a_ja_0.db_[a-z0-9]+.db")
     matches = [f for f in os.listdir(source) if pattern.match(f)]
-    assets = matches[0]
-    print(assets)
+    dbpath = decrypt_db(os.path.join(source, matches[0]))
     dstdir = os.path.join(source, 'texture')
     try:
       os.mkdir(dstdir)
     except FileExistsError:
       pass
-    db = klb_sqlite(assets).cursor()
+    db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READONLY).cursor()
     q = 'select distinct pack_name, head, size, key1, key2 from texture'
     for (pack_name, head, size, key1, key2) in db.execute(q):
       pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
       key = [key1, key2, 0x3039]
       pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
       pkg.seek(head)
-      fpath = os.path.join(dstdir, "%s_%d_.png" % (pack_name, head))
+      fpath = os.path.join(dstdir, "%s_%d.png" % (pack_name, head))
       print(fpath)
       dst = open(fpath, 'wb+')
       shutil.copyfileobj(pkg, dst, size)
