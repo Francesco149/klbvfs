@@ -18,6 +18,7 @@ import hashlib
 import struct
 import codecs
 import shutil
+import re
 
 
 def i8(x):
@@ -107,25 +108,6 @@ def sqlite_key(dbfile):
   return list(struct.unpack('>III', sha1[:12]))
 
 
-def vpath(path, key):
-  return '.'.join([str(i32(x)) for x in key]) + ' ' + path
-
-
-def klb_sqlite(dbfile):
-  vfs = KLBVFS()
-  key = sqlite_key(dbfile)
-  v = vpath(path=dbfile, key=key)
-  return apsw.Connection(v, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
-
-
-def do_query(args):
-  for row in klb_sqlite(args.dbfile).cursor().execute(args.sql):
-    if len(row) == 1:
-      print(row[0])
-    else:
-      print(row)
-
-
 class KLBVFSCodec(codecs.Codec):
   def encode(self, data, key):
     return klbvfs_transform(data, key)
@@ -153,6 +135,25 @@ def klbvfs_decoder(encoding_name):
 codecs.register(klbvfs_decoder)
 
 
+def vpath(path, key):
+  return '.'.join([str(i32(x)) for x in key]) + ' ' + path
+
+
+def klb_sqlite(dbfile):
+  vfs = KLBVFS()
+  key = sqlite_key(dbfile)
+  v = vpath(path=dbfile, key=key)
+  return apsw.Connection(v, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
+
+
+def do_query(args):
+  for row in klb_sqlite(args.dbfile).cursor().execute(args.sql):
+    if len(row) == 1:
+      print(row[0])
+    else:
+      print(row)
+
+
 def do_decrypt(args):
   for source in args.files:
     key = sqlite_key(source)
@@ -161,6 +162,31 @@ def do_decrypt(args):
     dst = open(dstpath, 'wb+')
     print('%s -> %s' % (source, dstpath))
     shutil.copyfileobj(src, dst)
+
+
+def do_dump(args):
+  for source in args.directories:
+    pattern = re.compile("asset_a_ja_0.db_[a-z0-9]+.db")
+    matches = [f for f in os.listdir(source) if pattern.match(f)]
+    assets = matches[0]
+    print(assets)
+    dstdir = os.path.join(source, 'texture')
+    try:
+      os.mkdir(dstdir)
+    except FileExistsError:
+      pass
+    db = klb_sqlite(assets).cursor()
+    q = 'select distinct pack_name, head, size, key1, key2 from texture'
+    for (pack_name, head, size, key1, key2) in db.execute(q):
+      pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
+      key = [key1, key2, 0x3039]
+      pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
+      pkg.seek(head)
+      print(key)
+      print(pkg.errors)
+      fpath = os.path.join(dstdir, "%s_%d_.png" % (pack_name, head))
+      dst = open(fpath, 'wb+')
+      shutil.copyfileobj(pkg, dst, size)
 
 
 if __name__ == "__main__":
@@ -177,6 +203,12 @@ if __name__ == "__main__":
   decrypt = sub.add_parser('decrypt', aliases=['de'], help=desc)
   decrypt.add_argument('files', nargs='+')
   decrypt.set_defaults(func=do_decrypt)
+  desc = 'dump encrypted assets from pkg files'
+  dump = sub.add_parser('dump', aliases=['d'], help=desc)
+  desc = 'directory where the pkg* folders and db files are located. '
+  desc += 'usually /data/data/com.klab.lovelive.allstars/files/files'
+  dump.add_argument('directories', nargs='?', help=desc, default='.')
+  dump.set_defaults(func=do_dump)
   args = parser.parse_args(sys.argv[1:])
   if 'func' not in args:
     parser.parse_args(['-h'])
