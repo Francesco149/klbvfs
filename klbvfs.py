@@ -19,6 +19,7 @@ import struct
 import codecs
 import shutil
 import re
+import multiprocessing as mp
 
 
 def i8(x):
@@ -155,9 +156,9 @@ def do_query(args):
 
 
 def decrypt_db(source):
+  dstpath = '_'.join(source.split('_')[:-1])
   key = sqlite_key(source)
   src = codecs.open(source, mode='rb', encoding='klbvfs', errors=key)
-  dstpath = '_'.join(source.split('_')[:-1])
   dst = open(dstpath, 'wb+')
   print('%s -> %s' % (source, dstpath))
   shutil.copyfileobj(src, dst)
@@ -171,27 +172,39 @@ def do_decrypt(args):
     decrypt_db(source)
 
 
+def decrypt_worker(source, pack_name, head, size, key1, key2):
+  dstdir = os.path.join(source, 'texture')
+  fpath = os.path.join(dstdir, "%s_%d.png" % (pack_name, head))
+  print("[decrypting] " + fpath)
+  pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
+  key = [key1, key2, 0x3039]
+  pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
+  pkg.seek(head)
+  dst = open(fpath, 'wb+')
+  shutil.copyfileobj(pkg, dst, size)
+  return fpath
+
+
 def do_dump(args):
   for source in args.directories:
     pattern = re.compile("asset_a_ja_0.db_[a-z0-9]+.db")
     matches = [f for f in os.listdir(source) if pattern.match(f)]
-    dbpath = decrypt_db(os.path.join(source, matches[0]))
+    dbpath = os.path.join(source, matches[0])
     dstdir = os.path.join(source, 'texture')
     try:
       os.mkdir(dstdir)
     except FileExistsError:
       pass
-    db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READONLY).cursor()
-    q = 'select distinct pack_name, head, size, key1, key2 from texture'
-    for (pack_name, head, size, key1, key2) in db.execute(q):
-      pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
-      key = [key1, key2, 0x3039]
-      pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
-      pkg.seek(head)
-      fpath = os.path.join(dstdir, "%s_%d.png" % (pack_name, head))
-      print(fpath)
-      dst = open(fpath, 'wb+')
-      shutil.copyfileobj(pkg, dst, size)
+    db = klb_sqlite(dbpath).cursor()
+    sel = 'select distinct pack_name, head, size, key1, key2 from texture'
+    with mp.Pool() as p:
+      results = []
+      f = decrypt_worker
+      for (pack_name, head, size, key1, key2) in db.execute(sel):
+        r = p.apply_async(f, (source, pack_name, head, size, key1, key2))
+        results.append(r)
+      for r in results:
+        print("[done] " + r.get())
 
 
 if __name__ == "__main__":
