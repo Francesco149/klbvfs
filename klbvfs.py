@@ -20,6 +20,8 @@ import codecs
 import shutil
 import re
 import multiprocessing as mp
+import magic
+import mimetypes
 
 
 def i8(x):
@@ -172,18 +174,51 @@ def do_decrypt(args):
     decrypt_db(source)
 
 
-def decrypt_worker(source, pack_name, head, size, key1, key2):
-  dstdir = os.path.join(source, 'texture')
-  fpath = os.path.join(dstdir, "%s_%d.png" % (pack_name, head))
-  print("[decrypting] " + fpath)
+def decrypt_worker(source, table, pack_name, head, size, key1, key2):
+  dstdir = os.path.join(source, table)
+  fpath = os.path.join(dstdir, "%s_%d" % (pack_name, head))
   pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
   key = [key1, key2, 0x3039]
   pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
   pkg.seek(head)
-  with open(fpath, 'wb+') as dst:
+  buf = pkg.read(1024)
+  mime = magic.from_buffer(buf, mime=True)
+  ext = mimetypes.guess_extension(mime)
+  if mime == 'application/octet-stream':
+    if buf.startswith(b'UnityFS'):
+      mime = "application/unityfs"
+      ext = ".unity3d"
+    elif table == 'adv_script':
+      # proprietary script format, TODO reverse engineer it
+      mime = "application/advscript"
+      ext = ".advscript"
+  key[0] = key1  # hack: reset rng state, codec has reference to this array
+  key[1] = key2
+  key[2] = 0x3039
+  pkg.seek(head)
+  print("[%s] decrypting to %s (%s)" % (fpath, ext, mime))
+  with open(fpath + ext, 'wb+') as dst:
     shutil.copyfileobj(pkg, dst, size)
   pkg.close()
   return fpath
+
+
+def dump_table(dbpath, source, table):
+  dstdir = os.path.join(source, table)
+  try:
+    os.mkdir(dstdir)
+  except FileExistsError:
+    pass
+  db = klb_sqlite(dbpath).cursor()
+  sel = 'select distinct pack_name, head, size, key1, key2 from ' + table
+  with mp.Pool() as p:
+    results = []
+    f = decrypt_worker
+    for (pack_name, head, size, k1, k2) in db.execute(sel):
+      r = p.apply_async(f, (source, table, pack_name, head, size, k1, k2))
+      results.append(r)
+    for r in results:
+      print("[%s] done" % r.get())
 
 
 def do_dump(args):
@@ -191,21 +226,8 @@ def do_dump(args):
     pattern = re.compile("asset_a_ja_0.db_[a-z0-9]+.db")
     matches = [f for f in os.listdir(source) if pattern.match(f)]
     dbpath = os.path.join(source, matches[0])
-    dstdir = os.path.join(source, 'texture')
-    try:
-      os.mkdir(dstdir)
-    except FileExistsError:
-      pass
-    db = klb_sqlite(dbpath).cursor()
-    sel = 'select distinct pack_name, head, size, key1, key2 from texture'
-    with mp.Pool() as p:
-      results = []
-      f = decrypt_worker
-      for (pack_name, head, size, key1, key2) in db.execute(sel):
-        r = p.apply_async(f, (source, pack_name, head, size, key1, key2))
-        results.append(r)
-      for r in results:
-        print("[done] " + r.get())
+    for table in args.types:
+      dump_table(dbpath, source, table)
 
 
 if __name__ == "__main__":
@@ -224,9 +246,16 @@ if __name__ == "__main__":
   decrypt.set_defaults(func=do_decrypt)
   desc = 'dump encrypted assets from pkg files'
   dump = sub.add_parser('dump', aliases=['d'], help=desc)
+  types = ['texture', 'live2d_sd_model', 'member_model', 'member_sd_model',
+           'background', 'shader', 'skill_effect', 'stage', 'stage_effect',
+           'skill_timeline', 'skill_wipe', 'adv_script',
+           'gacha_performance', 'navi_motion', 'navi_timeline']
+  desc = 'types of assets. supported values: ' + ', '.join(types)
+  dump.add_argument('--types', dest='types', nargs='*', metavar='',
+                    choices=types, default=types, help=desc)
   desc = 'directory where the pkg* folders and db files are located. '
   desc += 'usually /data/data/com.klab.lovelive.allstars/files/files'
-  dump.add_argument('directories', nargs='?', help=desc, default='.')
+  dump.add_argument('directories', nargs='*', help=desc, default='.')
   dump.set_defaults(func=do_dump)
   args = parser.parse_args(sys.argv[1:])
   if 'func' not in args:
