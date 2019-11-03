@@ -183,6 +183,7 @@ def do_dump(args):
       pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
       pkg.seek(head)
       fpath = os.path.join(dstdir, "%s_%d_.png" % (pack_name, head))
+      print(fpath)
       dst = open(fpath, 'wb+')
       shutil.copyfileobj(pkg, dst, size)
 
