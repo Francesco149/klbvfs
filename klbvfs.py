@@ -180,8 +180,9 @@ def decrypt_worker(source, pack_name, head, size, key1, key2):
   key = [key1, key2, 0x3039]
   pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
   pkg.seek(head)
-  dst = open(fpath, 'wb+')
-  shutil.copyfileobj(pkg, dst, size)
+  with open(fpath, 'wb+') as dst:
+    shutil.copyfileobj(pkg, dst, size)
+  pkg.close()
   return fpath
 
 
