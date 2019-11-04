@@ -221,13 +221,74 @@ def dump_table(dbpath, source, table):
       print("[%s] done" % r.get())
 
 
+def find_db(name, source):
+  pattern = re.compile(name + '.db_[a-z0-9]+.db')
+  matches = [f for f in os.listdir(source) if pattern.match(f)]
+  return os.path.join(source, matches[0])
+
 def do_dump(args):
   for source in args.directories:
-    pattern = re.compile("asset_a_ja_0.db_[a-z0-9]+.db")
-    matches = [f for f in os.listdir(source) if pattern.match(f)]
-    dbpath = os.path.join(source, matches[0])
+    dbpath = find_db('asset_a_ja_0' + source)
     for table in args.types:
       dump_table(dbpath, source, table)
+
+
+def do_tickets(args):
+  import io
+  import html
+  from PIL import Image, ImageFont, ImageDraw
+  import textwrap
+  masterdb = klb_sqlite(find_db('masterdata', args.directory)).cursor()
+  db = klb_sqlite(find_db('asset_a_ja_0', args.directory)).cursor()
+  dic = klb_sqlite(find_db('dictionary_ja_k', args.directory)).cursor()
+  mastersel = '''
+  select id, name, description, thumbnail_asset_path
+  from m_gacha_ticket
+  '''
+  i = 0
+  pics = []
+  for (id, name, desc, asset_path) in masterdb.execute(mastersel):
+    sel = '''
+    select pack_name, head, size, key1, key2
+    from texture
+    where asset_path = ?
+    '''
+    rows = db.execute(sel, (asset_path,))
+    pics.append(rows.fetchone() + (id, name, desc))
+  img = None
+  fnt = None
+  fonts = ['NotoSerifCJK-Regular.ttc', 'Arial Unicode.ttf']
+  for font in fonts:
+    try:
+      fnt = ImageFont.truetype(font, 20)
+    except OSError:
+      continue
+    break
+  if fnt is None:
+    print('warning: falling back to default font')
+  for (pakname, head, size, key1, key2, id, name, desc) in pics:
+    sel = 'select message from m_dictionary where id = ?'
+    if fnt is not None:
+      name = html.unescape(dic.execute(sel, (name[2:],)).fetchone()[0])
+      desc = html.unescape(dic.execute(sel, (desc[2:],)).fetchone()[0])
+    key = [key1, key2, 0x3039]
+    pkgpath = os.path.join(args.directory, "pkg" + pakname[:1], pakname)
+    pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
+    pkg.seek(head)
+    thumb = Image.open(io.BytesIO(pkg.read(size)))
+    if img is None:
+      (_, height) = thumb.size
+      h = int(float(height) * 1.1)
+      x = int(float(height) * 0.1)
+      img = Image.new('RGBA', (800, x + len(pics) * h), color=(255,)*3)
+      d = ImageDraw.Draw(img)
+    y = x + i * h
+    img.paste(thumb, (x, y))
+    lines = ['%d %s@%d,%d' % (id, pakname, head, size), name]
+    for j, l in enumerate(lines + textwrap.wrap(desc, 30)):
+      d.text((x * 2 + h, y + h / 5 * j), l, fill=(0,)*3, font=fnt)
+    i += 1
+  img.save('tickets.png')
 
 
 if __name__ == "__main__":
@@ -253,10 +314,14 @@ if __name__ == "__main__":
   desc = 'types of assets. supported values: ' + ', '.join(types)
   dump.add_argument('--types', dest='types', nargs='*', metavar='',
                     choices=types, default=types, help=desc)
-  desc = 'directory where the pkg* folders and db files are located. '
-  desc += 'usually /data/data/com.klab.lovelive.allstars/files/files'
-  dump.add_argument('directories', nargs='*', help=desc, default='.')
+  dirdesc = 'directory where the pkg* folders and db files are located. '
+  dirdesc += 'usually /data/data/com.klab.lovelive.allstars/files/files'
+  dump.add_argument('directories', nargs='*', help=dirdesc, default='.')
   dump.set_defaults(func=do_dump)
+  desc = 'generate tickets.png with all gacha tickets. requires pillow'
+  tickets = sub.add_parser('tickets', aliases=['tix'], help=desc)
+  tickets.add_argument('directory', help=dirdesc, nargs='*', default='.')
+  tickets.set_defaults(func=do_tickets)
   args = parser.parse_args(sys.argv[1:])
   if 'func' not in args:
     parser.parse_args(['-h'])
