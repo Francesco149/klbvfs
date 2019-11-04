@@ -149,6 +149,30 @@ def klb_sqlite(dbfile):
   return apsw.Connection(v, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
 
 
+def find_db(name, directory):
+  pattern = re.compile(name + '.db_[a-z0-9]+.db')
+  matches = [f for f in os.listdir(directory) if pattern.match(f)]
+  if len(matches) >= 1:
+    return os.path.join(directory, matches[0])
+  return None
+
+
+def dictionary_get(key, directory):
+  spl = key.split('.', 2)
+  if len(spl) < 2:
+    return key
+  dbpath = find_db('dictionary_ja_' + spl[0], directory)
+  if dbpath is None:
+    return key
+  db = klb_sqlite(dbpath).cursor()
+  sel = 'select message from m_dictionary where id = ?'
+  rows = db.execute(sel, (spl[1],))
+  res = rows.fetchone()
+  if res is None:
+    return key
+  return res[0]
+
+
 def do_query(args):
   for row in klb_sqlite(args.dbfile).cursor().execute(args.sql):
     if len(row) == 1:
@@ -215,22 +239,23 @@ def dump_table(dbpath, source, table):
     results = []
     f = decrypt_worker
     for (pack_name, head, size, k1, k2) in db.execute(sel):
-      r = p.apply_async(f, (source, table, pack_name, head, size, k1, k2))
+      r = p.apply_async(
+          f, (source, table, pack_name, head, size, k1, k2))
       results.append(r)
     for r in results:
       print("[%s] done" % r.get())
 
-
-def find_db(name, source):
-  pattern = re.compile(name + '.db_[a-z0-9]+.db')
-  matches = [f for f in os.listdir(source) if pattern.match(f)]
-  return os.path.join(source, matches[0])
 
 def do_dump(args):
   for source in args.directories:
     dbpath = find_db('asset_a_ja_0' + source)
     for table in args.types:
       dump_table(dbpath, source, table)
+
+
+def do_dictionary(args):
+  for word in args.text:
+    print(dictionary_get(word, args.directory))
 
 
 def do_tickets(args):
@@ -280,13 +305,13 @@ def do_tickets(args):
       (_, height) = thumb.size
       h = int(float(height) * 1.1)
       x = int(float(height) * 0.1)
-      img = Image.new('RGBA', (800, x + len(pics) * h), color=(255,)*3)
+      img = Image.new('RGBA', (800, x + len(pics) * h), color=(255,) * 3)
       d = ImageDraw.Draw(img)
     y = x + i * h
     img.paste(thumb, (x, y))
     lines = ['%d %s@%d,%d' % (id, pakname, head, size), name]
     for j, l in enumerate(lines + textwrap.wrap(desc, 30)):
-      d.text((x * 2 + h, y + h / 5 * j), l, fill=(0,)*3, font=fnt)
+      d.text((x * 2 + h, y + h / 5 * j), l, fill=(0,) * 3, font=fnt)
     i += 1
   img.save('tickets.png')
 
@@ -295,16 +320,19 @@ if __name__ == "__main__":
   import argparse
   parser = argparse.ArgumentParser(description='klab sqlite vfs utils')
   sub = parser.add_subparsers()
+
   desc = 'run a sql query on the encrypted database'
   query = sub.add_parser('query', aliases=['q'], help=desc)
   query.add_argument('dbfile')
   defsql = "select sql from sqlite_master where type='table'"
   query.add_argument('sql', nargs='?', default=defsql)
   query.set_defaults(func=do_query)
+
   desc = 'clone encrypted database to a regular unencrypted sqlite db'
   decrypt = sub.add_parser('decrypt', aliases=['de'], help=desc)
   decrypt.add_argument('files', nargs='+')
   decrypt.set_defaults(func=do_decrypt)
+
   desc = 'dump encrypted assets from pkg files'
   dump = sub.add_parser('dump', aliases=['d'], help=desc)
   types = ['texture', 'live2d_sd_model', 'member_model', 'member_sd_model',
@@ -318,10 +346,20 @@ if __name__ == "__main__":
   dirdesc += 'usually /data/data/com.klab.lovelive.allstars/files/files'
   dump.add_argument('directories', nargs='*', help=dirdesc, default='.')
   dump.set_defaults(func=do_dump)
+
+  desc = "look up strings in the game's dictionary"
+  dictionary = sub.add_parser('dictionary', aliases=['dic'], help=desc)
+  desc = 'strings to look up. will be returned unchanged if not found'
+  dictionary.add_argument('--directory', '-d', dest='directory',
+                          help=dirdesc, default='.')
+  dictionary.add_argument('text', nargs='+', help=desc)
+  dictionary.set_defaults(func=do_dictionary)
+
   desc = 'generate tickets.png with all gacha tickets. requires pillow'
   tickets = sub.add_parser('tickets', aliases=['tix'], help=desc)
-  tickets.add_argument('directory', help=dirdesc, nargs='*', default='.')
+  tickets.add_argument('directory', nargs='?', help=dirdesc, default='.')
   tickets.set_defaults(func=do_tickets)
+
   args = parser.parse_args(sys.argv[1:])
   if 'func' not in args:
     parser.parse_args(['-h'])
