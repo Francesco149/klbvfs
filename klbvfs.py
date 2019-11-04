@@ -299,7 +299,10 @@ def do_tickets(args):
     pkgpath = os.path.join(args.directory, "pkg" + pakname[:1], pakname)
     pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
     pkg.seek(head)
-    thumb = Image.open(io.BytesIO(pkg.read(size)))
+    imagedata = pkg.read(size)
+    mime = magic.from_buffer(imagedata, mime=True)
+    ext = mimetypes.guess_extension(mime)
+    thumb = Image.open(io.BytesIO(imagedata))
     if img is None:
       (_, height) = thumb.size
       h = int(float(height) * 1.1)
@@ -309,6 +312,7 @@ def do_tickets(args):
     y = x + i * h
     img.paste(thumb, (x, y))
     lines = ['%d %s@%d,%d' % (id, pakname, head, size), name]
+    print('%d -> "texture/%s_%d%s",' % (id, pakname, head, ext))
     for j, l in enumerate(lines + textwrap.wrap(desc, 30)):
       d.text((x * 2 + h, y + h / 5 * j), l, fill=(0,) * 3, font=fnt)
     i += 1
