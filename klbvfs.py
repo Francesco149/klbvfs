@@ -22,6 +22,7 @@ import re
 import multiprocessing as mp
 import magic
 import mimetypes
+import html
 
 
 def i8(x):
@@ -170,7 +171,7 @@ def dictionary_get(key, directory):
   res = rows.fetchone()
   if res is None:
     return key
-  return res[0]
+  return html.unescape(res[0])
 
 
 def do_query(args):
@@ -260,7 +261,6 @@ def do_dictionary(args):
 
 def do_tickets(args):
   import io
-  import html
   from PIL import Image, ImageFont, ImageDraw
   import textwrap
   masterdb = klb_sqlite(find_db('masterdata', args.directory)).cursor()
@@ -292,10 +292,9 @@ def do_tickets(args):
   if fnt is None:
     print('warning: falling back to default font')
   for (pakname, head, size, key1, key2, id, name, desc) in pics:
-    sel = 'select message from m_dictionary where id = ?'
     if fnt is not None:
-      name = html.unescape(dic.execute(sel, (name[2:],)).fetchone()[0])
-      desc = html.unescape(dic.execute(sel, (desc[2:],)).fetchone()[0])
+      name = dictionary_get(name, args.directory)
+      desc = dictionary_get(desc, args.directory)
     key = [key1, key2, 0x3039]
     pkgpath = os.path.join(args.directory, "pkg" + pakname[:1], pakname)
     pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
