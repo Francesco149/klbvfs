@@ -155,7 +155,8 @@ def find_db(name, directory):
   matches = [f for f in os.listdir(directory) if pattern.match(f)]
   if len(matches) >= 1:
     return os.path.join(directory, matches[0])
-  return None
+  else:
+    return None
 
 
 def dictionary_get(key, directory):
@@ -164,7 +165,9 @@ def dictionary_get(key, directory):
     return key
   dbpath = find_db('dictionary_ja_' + spl[0], directory)
   if dbpath is None:
-    return key
+    dbpath = find_db('dictionary_ko_' + spl[0], directory)
+    if dbpath is None:
+      return key
   db = klb_sqlite(dbpath).cursor()
   sel = 'select message from m_dictionary where id = ?'
   rows = db.execute(sel, (spl[1],))
@@ -249,7 +252,9 @@ def dump_table(dbpath, source, table):
 
 def do_dump(args):
   for source in args.directories:
-    dbpath = find_db('asset_a_ja_0' + source)
+    dbpath = find_db('asset_a_ja_0' , source)
+    if dbpath is None:
+      dbpath = find_db('asset_a_ko' , source)
     for table in args.types:
       dump_table(dbpath, source, table)
 
@@ -264,8 +269,12 @@ def do_tickets(args):
   from PIL import Image, ImageFont, ImageDraw
   import textwrap
   masterdb = klb_sqlite(find_db('masterdata', args.directory)).cursor()
-  db = klb_sqlite(find_db('asset_a_ja_0', args.directory)).cursor()
-  dic = klb_sqlite(find_db('dictionary_ja_k', args.directory)).cursor()
+  if find_db('asset_a_ja_0', args.directory) is None:
+    db = klb_sqlite(find_db('asset_a_ko', args.directory)).cursor()
+    dic = klb_sqlite(find_db('dictionary_ko_k', args.directory)).cursor()
+  else:
+    db = klb_sqlite(find_db('asset_a_ja_0', args.directory)).cursor()
+    dic = klb_sqlite(find_db('dictionary_ja_k', args.directory)).cursor()
   mastersel = '''
   select id, name, description, thumbnail_asset_path
   from m_gacha_ticket
@@ -317,7 +326,6 @@ def do_tickets(args):
       d.text((x * 2 + h, y + h / 5 * j), l, fill=(0,) * 3, font=fnt)
     i += 1
   img.save('tickets.png')
-
 
 if __name__ == "__main__":
   import argparse
