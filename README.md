@@ -29,6 +29,7 @@ now you can use it
 ./klbvfs.py query masterdata.db_* "select sql from sqlite_master;"
 ./klbvfs decrypt *.db_*.db
 ./klbvfs.py --help
+./klbvfs.py dump [--types [[...]]] [directories [directories ...]]
 ```
 
 this also registers a python codec for klbvfs which can be used to decrypt
