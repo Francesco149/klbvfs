@@ -1,6 +1,6 @@
 apsw==3.9.2.post1
 beautifulsoup4==4.8.1
-lxml==4.4.1
+lxml==4.6.3
 python-magic==0.4.15
 soupsieve==1.9.4
 Pillow==7.1.2
