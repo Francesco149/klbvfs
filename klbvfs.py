@@ -255,6 +255,8 @@ def do_dump(args):
     dbpath = find_db('asset_a_ja_0' , source)
     if dbpath is None:
       dbpath = find_db('asset_a_ko' , source)
+    if dbpath is None:
+      dbpath = find_db('asset_a_en' , source)
     for table in args.types:
       dump_table(dbpath, source, table)
 
@@ -269,9 +271,15 @@ def do_tickets(args):
   from PIL import Image, ImageFont, ImageDraw
   import textwrap
   masterdb = klb_sqlite(find_db('masterdata', args.directory)).cursor()
-  if find_db('asset_a_ja_0', args.directory) is None:
-    db = klb_sqlite(find_db('asset_a_ko', args.directory)).cursor()
-    dic = klb_sqlite(find_db('dictionary_ko_k', args.directory)).cursor()
+  f_db = find_db('asset_a_ja_0', args.directory)
+  if f_db is None:
+    f_db = find_db('asset_a_ko', args.directory)
+    if f_db is None:  
+      db = klb_sqlite(find_db('asset_a_en', args.directory)).cursor()
+      dic = klb_sqlite(find_db('dictionary_en_k', args.directory)).cursor()
+    else:
+      db = klb_sqlite(find_db('asset_a_ko', args.directory)).cursor()
+      dic = klb_sqlite(find_db('dictionary_ko_k', args.directory)).cursor()
   else:
     db = klb_sqlite(find_db('asset_a_ja_0', args.directory)).cursor()
     dic = klb_sqlite(find_db('dictionary_ja_k', args.directory)).cursor()
