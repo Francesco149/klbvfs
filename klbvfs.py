@@ -271,6 +271,7 @@ def do_tickets(args):
   from PIL import Image, ImageFont, ImageDraw
   import textwrap
   masterdb = klb_sqlite(find_db('masterdata', args.directory)).cursor()
+  # TODO Clean this up a bit
   f_db = find_db('asset_a_ja_0', args.directory)
   if f_db is None:
     f_db = find_db('asset_a_ko', args.directory)
