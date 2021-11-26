@@ -149,7 +149,6 @@ def klb_sqlite(dbfile):
   v = vpath(path=dbfile, key=key)
   return apsw.Connection(v, flags=apsw.SQLITE_OPEN_READONLY, vfs='klb_vfs')
 
-
 def find_db(name, directory):
   pattern = re.compile(name + '.db_[a-z0-9]+.db')
   matches = [f for f in os.listdir(directory) if pattern.match(f)]
@@ -157,7 +156,6 @@ def find_db(name, directory):
     return os.path.join(directory, matches[0])
   else:
     return None
-
 
 def dictionary_get(key, directory):
   spl = key.split('.', 2)
@@ -176,14 +174,12 @@ def dictionary_get(key, directory):
     return key
   return html.unescape(res[0])
 
-
 def do_query(args):
   for row in klb_sqlite(args.dbfile).cursor().execute(args.sql):
     if len(row) == 1:
       print(row[0])
     else:
       print(row)
-
 
 def decrypt_db(source):
   dstpath = '_'.join(source.split('_')[:-1])
@@ -196,15 +192,15 @@ def decrypt_db(source):
   dst.close()
   return dstpath
 
-
 def do_decrypt(args):
   for source in args.files:
     decrypt_db(source)
 
-
-def decrypt_worker(source, table, pack_name, head, size, key1, key2):
+def decrypt_worker(pkey, source, table, pack_name, head, size, key1, key2):
+  # Get package_key with pack_name and display it
+  print(pkey)
   dstdir = os.path.join(source, table)
-  fpath = os.path.join(dstdir, "%s_%d" % (pack_name, head))
+  fpath = os.path.join(dstdir, "%s_%d" % (pack_name, head)) # F path is set here
   pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
   key = [key1, key2, 0x3039]
   pkg = codecs.open(pkgpath, mode='rb', encoding='klbvfs', errors=key)
@@ -226,25 +222,28 @@ def decrypt_worker(source, table, pack_name, head, size, key1, key2):
   pkg.seek(head)
   print("[%s] decrypting to %s (%s)" % (fpath, ext, mime))
   with open(fpath + ext, 'wb+') as dst:
-    shutil.copyfileobj(pkg, dst, size)
+    shutil.copyfileobj(pkg, dst, size) # Insert a section with location; change dstdir
   pkg.close()
   return fpath
 
 
 def dump_table(dbpath, source, table):
+  print("Dumping tables...")
   dstdir = os.path.join(source, table)
   try:
     os.mkdir(dstdir)
   except FileExistsError:
     pass
   db = klb_sqlite(dbpath).cursor()
-  sel = 'select distinct pack_name, head, size, key1, key2 from ' + table
+  #sel = 'select distinct pack_name, head, size, key1, key2 from ' + table
+  sel = 'SELECT distinct m_asset_package_mapping.package_key,'+table+'.pack_name, '+table+'.head, '+table+'.size, '+table+'.key1, '+table+'.key2 FROM '+table+' INNER JOIN m_asset_package_mapping ON m_asset_package_mapping.pack_name = '+table+'.pack_name'
+  print(sel)
   with mp.Pool() as p:
     results = []
     f = decrypt_worker
-    for (pack_name, head, size, k1, k2) in db.execute(sel):
+    for (package_key, pack_name, head, size, k1, k2) in db.execute(sel):
       r = p.apply_async(
-          f, (source, table, pack_name, head, size, k1, k2))
+          f, (package_key, source, table, pack_name, head, size, k1, k2))
       results.append(r)
     for r in results:
       print("[%s] done" % r.get())
@@ -275,7 +274,7 @@ def do_tickets(args):
   f_db = find_db('asset_a_ja_0', args.directory)
   if f_db is None:
     f_db = find_db('asset_a_ko', args.directory)
-    if f_db is None:  
+    if f_db is None:
       db = klb_sqlite(find_db('asset_a_en', args.directory)).cursor()
       dic = klb_sqlite(find_db('dictionary_en_k', args.directory)).cursor()
     else:
