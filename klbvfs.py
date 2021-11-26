@@ -198,8 +198,14 @@ def do_decrypt(args):
 
 def decrypt_worker(pkey, source, table, pack_name, head, size, key1, key2):
   # Get package_key with pack_name and display it
-  print(pkey)
   dstdir = os.path.join(source, table)
+  dstdir = os.path.join(dstdir,pkey.replace(":","/"))
+  print("Making : {}".format(dstdir))
+  try:
+    os.makedirs(dstdir)
+  except FileExistsError:
+    pass
+  print("Made: "+dstdir)
   fpath = os.path.join(dstdir, "%s_%d" % (pack_name, head)) # F path is set here
   pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
   key = [key1, key2, 0x3039]
@@ -221,8 +227,8 @@ def decrypt_worker(pkey, source, table, pack_name, head, size, key1, key2):
   key[2] = 0x3039
   pkg.seek(head)
   print("[%s] decrypting to %s (%s)" % (fpath, ext, mime))
-  with open(fpath + ext, 'wb+') as dst:
-    shutil.copyfileobj(pkg, dst, size) # Insert a section with location; change dstdir
+  with open(fpath + ext, 'wb+') as dst: # Add error checking?
+    shutil.copyfileobj(pkg, dst, size)
   pkg.close()
   return fpath
 
