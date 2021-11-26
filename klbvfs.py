@@ -205,7 +205,7 @@ def decrypt_worker(pkey, source, table, pack_name, head, size, key1, key2):
     os.makedirs(dstdir)
   except FileExistsError:
     pass
-  print("Made: "+dstdir)
+  print("Made   : {}".format(dstdir))
   fpath = os.path.join(dstdir, "%s_%d" % (pack_name, head)) # F path is set here
   pkgpath = os.path.join(source, "pkg" + pack_name[:1], pack_name)
   key = [key1, key2, 0x3039]
